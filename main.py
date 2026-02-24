@@ -9,9 +9,26 @@ app = Client(
     workers=WORKERS
 )
 
-# 🔥 Start Command Only (No Spam Loop)
-@app.on_message(filters.command("start") & filters.private & ~filters.me)
+@app.on_message(filters.command("start") & filters.private)
 async def start_handler(client, message):
+
+    # Agar deep link hai
+    if len(message.command) > 1:
+        file_key = message.command[1]
+
+        await message.reply_text(
+            f"🔐 Vault Key Detected...\n\n"
+            f"Key: `{file_key}`\n\n"
+            f"Checking access..."
+        )
+
+        # Yaha future me:
+        # ForceSub check
+        # MongoDB lookup
+        # File send logic
+        return
+
+    # Agar normal /start hai
     await message.reply_text(
         "⚡ ORA ORA ORA! ⚡\n\n"
         "📦 Welcome to JOJO SYNC SENPAI\n\n"
