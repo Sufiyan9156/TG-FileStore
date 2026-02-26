@@ -1,7 +1,0 @@
-pyrogram
-tgcrypto
-pyromod==1.5
-python-dotenv
-pymongo
-dnspython
-aiohttp
