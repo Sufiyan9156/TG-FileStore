@@ -24,7 +24,7 @@ async def link_generator(client: Client, message: Message):
     filters=filters.media,
     timeout=300
 )
-        )
+        
     except ListenerTimeout:
         return await ask_msg.edit("❌ Time Out! Send file again.")
 
@@ -107,4 +107,5 @@ async def batch(client: Client, message: Message):
         reply_markup=reply_markup,
         disable_web_page_preview=True
     )
+
 
