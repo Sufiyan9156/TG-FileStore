@@ -18,10 +18,18 @@ async def link_generator(client: Client, message: Message):
         file_msg = await client.ask(
             chat_id=message.from_user.id,
             filters=filters.media | filters.document | filters.video | filters.audio,
-            timeout=120
+            timeout=300
         )
-    except:
-        return await ask_msg.edit("❌ Time Out!")
+    from pyrogram.errors import ListenerTimeout
+
+try:
+    file_msg = await client.ask(
+        chat_id=message.from_user.id,
+        filters=filters.media | filters.document | filters.video | filters.audio,
+        timeout=300
+    )
+except ListenerTimeout:
+    return await ask_msg.edit("❌ Time Out! Send file again.")
 
     await ask_msg.edit("⏳ Storing in database...")
 
@@ -97,3 +105,4 @@ async def batch(client: Client, message: Message):
         reply_markup=reply_markup,
         disable_web_page_preview=True
     )
+
