@@ -1,241 +1,175 @@
-import base64
-import re
+from pyrogram import Client, filters
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.errors import FloodWait
+from config import MSG_EFFECT, OWNER_ID
+from plugins.shortner import get_short
+from helper.helper_func import (
+    get_messages,
+    force_sub,
+    decode,
+    batch_auto_del_notification
+)
 import asyncio
-from pyrogram.enums import ChatMemberStatus
-from pyrogram.errors import UserNotParticipant, Forbidden, FloodWait
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # =============================================================== #
-# ENCODE / DECODE
-# =============================================================== #
 
-async def encode(string: str):
-    return base64.urlsafe_b64encode(string.encode()).decode().rstrip("=")
+@Client.on_message(filters.command('start') & filters.private)
+async def start_command(client: Client, message: Message):
 
-async def decode(base64_string: str):
-    base64_string += "=" * (-len(base64_string) % 4)
-    return base64.urlsafe_b64decode(base64_string.encode()).decode()
-
-# =============================================================== #
-# FETCH MESSAGES (ALWAYS FROM PRIMARY DB)
-# =============================================================== #
-
-async def get_messages(client, message_ids):
-
-    messages = []
-
-    for i in range(0, len(message_ids), 200):
-        chunk = message_ids[i:i + 200]
-
-        try:
-            msgs = await client.get_messages(client.db, chunk)
-        except FloodWait as e:
-            await asyncio.sleep(e.value)
-            msgs = await client.get_messages(client.db, chunk)
-
-        messages.extend([m for m in msgs if m])
-
-    return messages
-
-# =============================================================== #
-# MESSAGE ID EXTRACTION
-# =============================================================== #
-
-async def get_message_id(client, message):
-
-    if message.forward_from_chat:
-        return message.forward_from_message_id, message.forward_from_chat.id
-
-    if message.forward_sender_name:
-        return 0, 0
-
-    if message.text:
-        pattern = r"https://t.me/(?:c/)?(.+?)/(\d+)"
-        match = re.match(pattern, message.text.strip())
-
-        if not match:
-            return 0, 0
-
-        channel_part = match.group(1)
-        msg_id = int(match.group(2))
-
-        try:
-            if channel_part.isdigit():
-                return msg_id, int(f"-100{channel_part}")
-
-            chat = await client.get_chat(channel_part)
-            return msg_id, chat.id
-
-        except:
-            return 0, 0
-
-    return 0, 0
-
-async def get_message_id_legacy(client, message):
-    msg_id, _ = await get_message_id(client, message)
-    return msg_id
-
-# =============================================================== #
-# TIME HELPERS
-# =============================================================== #
-
-def convert_time(duration_seconds: int) -> str:
-
-    periods = [
-        ('Day', 86400),
-        ('Hour', 3600),
-        ('Minute', 60),
-        ('Second', 1)
-    ]
-
-    parts = []
-
-    for name, secs in periods:
-        if duration_seconds >= secs:
-            qty = duration_seconds // secs
-            duration_seconds %= secs
-            parts.append(f"{qty} {name}{'s' if qty > 1 else ''}")
-
-    return ', '.join(parts) if parts else "0 Second"
-
-# =============================================================== #
-# FORCE SUB SYSTEM
-# =============================================================== #
-
-async def check_subscription(client, user_id):
-
-    statuses = {}
-
-    if not getattr(client, "fsub_dict", None):
-        return statuses
-
-    if not await client.mongodb.present_user(user_id):
-        await client.mongodb.add_user(user_id)
-
-    for channel_id, (channel_name, channel_link, request, timer) in client.fsub_dict.items():
-        try:
-            user = await client.get_chat_member(channel_id, user_id)
-            status = user.status
-
-            if status in {
-                ChatMemberStatus.MEMBER,
-                ChatMemberStatus.ADMINISTRATOR,
-                ChatMemberStatus.OWNER
-            }:
-                statuses[channel_id] = status
-            else:
-                statuses[channel_id] = ChatMemberStatus.BANNED
-
-        except UserNotParticipant:
-            statuses[channel_id] = ChatMemberStatus.BANNED
-        except Forbidden:
-            statuses[channel_id] = None
-        except:
-            statuses[channel_id] = None
-
-    return statuses
-
-def is_user_subscribed(statuses):
-
-    if not statuses:
-        return True
-
-    return all(
-        status in {
-            ChatMemberStatus.MEMBER,
-            ChatMemberStatus.ADMINISTRATOR,
-            ChatMemberStatus.OWNER
-        }
-        for status in statuses.values()
-        if status is not None
-    )
-
-# =============================================================== #
-# FORCE SUB WRAPPER (SAFE VERSION)
-# =============================================================== #
-
-async def force_sub(client, message):
-
-    if not getattr(client, "fsub_dict", None):
-        return True
-
-    statuses = await check_subscription(client, message.from_user.id)
-
-    if not is_user_subscribed(statuses):
-
-        buttons = []
-
-        for channel_id, (channel_name, channel_link, request, timer) in client.fsub_dict.items():
-            if channel_link:
-                buttons.append(
-                    [InlineKeyboardButton(
-                        text=f"Join {channel_name}",
-                        url=channel_link
-                    )]
-                )
-
-        # 🔥 Important fix: Empty keyboard avoid
-        if not buttons:
-            return True
-
-        await message.reply(
-            "⚠️ You must join all required channels before using this bot.",
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
-
-        return False
-
-    return True
-
-# =============================================================== #
-# AUTO DELETE SYSTEM
-# =============================================================== #
-
-DEL_MSG = """<b>This File is deleting automatically in {time}.</b>"""
-
-async def batch_auto_del_notification(
-    bot_username,
-    messages,
-    delay_time,
-    transfer_link,
-    chat_id,
-    client
-):
-
-    if not messages:
+    # ✅ FORCE SUB CHECK
+    if not await force_sub(client, message):
         return
 
-    notification_msg = await client.send_message(
-        chat_id=chat_id,
-        text=DEL_MSG.format(time=convert_time(delay_time)),
-        disable_web_page_preview=True
-    )
+    user_id = message.from_user.id
 
-    await asyncio.sleep(delay_time)
-
-    for msg in messages:
+    # Add user if not present
+    if not await client.mongodb.present_user(user_id):
         try:
-            await msg.delete()
+            await client.mongodb.add_user(user_id)
         except:
             pass
 
-    try:
-        if transfer_link:
-            link = f"https://t.me/{bot_username}?start={transfer_link}"
+    # Check banned
+    if await client.mongodb.is_banned(user_id):
+        return await message.reply("❌ You are banned from using this bot.")
 
-            button = [[
-                InlineKeyboardButton(
-                    text="• ɢᴇᴛ ғɪʟᴇs •",
-                    url=link
+    text = message.text
+
+    # ===============================================================
+    # FILE REQUEST MODE
+    # ===============================================================
+
+    if len(text.split()) > 1:
+
+        try:
+            original_payload = text.split(" ", 1)[1]
+            base64_string = original_payload
+        except:
+            return await message.reply("⚠️ Invalid link.")
+
+        # Premium check
+        is_user_pro = await client.mongodb.is_pro(user_id)
+        shortner_enabled = getattr(client, "shortner_enabled", True)
+
+        # 🔹 Shortner condition
+        if (
+            not is_user_pro
+            and user_id != OWNER_ID
+            and shortner_enabled
+            and not base64_string.startswith("yu3elk")
+        ):
+            try:
+                short_link = get_short(
+                    f"https://t.me/{client.username}?start=yu3elk{base64_string}7",
+                    client
                 )
-            ]]
+            except:
+                return await message.reply("❌ Shortener failed.")
 
-            await notification_msg.edit_text(
-                text="<b>›› Files Deleted</b>",
-                reply_markup=InlineKeyboardMarkup(button)
+            tutorial_link = getattr(
+                client,
+                "tutorial_link",
+                "https://t.me/How_to_Download_7x/26"
             )
-        else:
-            await notification_msg.edit_text("<b>›› Files Deleted</b>")
 
-    except:
-        pass
+            await message.reply(
+                "🔗 Click below to access your file:",
+                reply_markup=InlineKeyboardMarkup([
+                    [
+                        InlineKeyboardButton("• Open Link •", url=short_link),
+                        InlineKeyboardButton("Tutorial", url=tutorial_link)
+                    ]
+                ])
+            )
+            return
+
+        # Decode payload
+        try:
+            decoded = await decode(base64_string)
+            data = decoded.split("-")
+        except:
+            return await message.reply("⚠️ Invalid or expired link.")
+
+        ids = []
+
+        try:
+            if len(data) == 3:
+                start = int(int(data[1]) / abs(client.db))
+                end = int(int(data[2]) / abs(client.db))
+                ids = list(range(start, end + 1))
+            elif len(data) == 2:
+                msg_id = int(int(data[1]) / abs(client.db))
+                ids = [msg_id]
+        except:
+            return await message.reply("⚠️ Corrupted link.")
+
+        wait_msg = await message.reply("⏳ Please wait...")
+
+        try:
+            messages = await get_messages(client, ids)
+        except:
+            await wait_msg.edit("❌ Failed fetching files.")
+            return
+
+        if not messages:
+            return await wait_msg.edit("❌ Files not found.")
+
+        await wait_msg.delete()
+
+        sent_msgs = []
+
+        for msg in messages:
+            try:
+                copied = await msg.copy(
+                    chat_id=user_id,
+                    protect_content=client.protect
+                )
+                sent_msgs.append(copied)
+            except FloodWait as e:
+                await asyncio.sleep(e.value)
+                copied = await msg.copy(
+                    chat_id=user_id,
+                    protect_content=client.protect
+                )
+                sent_msgs.append(copied)
+            except:
+                pass
+
+        # Auto delete
+        if sent_msgs and getattr(client, "auto_del", 0) > 0:
+            asyncio.create_task(
+                batch_auto_del_notification(
+                    bot_username=client.username,
+                    messages=sent_msgs,
+                    delay_time=client.auto_del,
+                    transfer_link=original_payload,
+                    chat_id=user_id,
+                    client=client
+                )
+            )
+
+        return
+
+    # ===============================================================
+    # NORMAL START MESSAGE
+    # ===============================================================
+
+    buttons = [
+        [
+            InlineKeyboardButton("Help", callback_data="about"),
+            InlineKeyboardButton("Close", callback_data="close")
+        ]
+    ]
+
+    if user_id in client.admins:
+        buttons.insert(
+            0,
+            [InlineKeyboardButton("⚙ Settings", callback_data="settings")]
+        )
+
+    start_caption = f"👋 Welcome {message.from_user.mention}"
+
+    await message.reply(
+        start_caption,
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
