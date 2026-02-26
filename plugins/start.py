@@ -10,8 +10,11 @@ import asyncio
 #===============================================================#
 
 @Client.on_message(filters.command('start') & filters.private)
-@force_sub
 async def start_command(client: Client, message: Message):
+
+    if not await force_sub(client, message):
+        return
+
     user_id = message.from_user.id
 
     # 1. Add user if not present
