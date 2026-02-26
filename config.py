@@ -13,16 +13,16 @@ SHORT_API = ""
 SHORT_TUT = "https://t.me/How_to_Download_7x/26"
 
 # Bot Configuration
-SESSION = "yato"
+SESSION = "filestoredb"
 TOKEN = "8586327207:AAFW0ZP0x3nwds9ldddAe2ZSDT0UzmaSryY"
 API_ID = "26044496"
-API_HASH = ""
+API_HASH = "e2b4c24b7a9642e47a5ae5a45e013c31"
 WORKERS = 5
 
 DB_URI = "mongodb+srv://sofiyanb42_db_user:Test12345@abufilebotdb.up4utqb.mongodb.net/filestoredb?retryWrites=true&w=majority"
-DB_NAME = "yato"
+DB_NAME = "filestoredb"
 
-FSUBS = [[-1003016571084, True, 10]] # Force Subscription Channels [channel_id, request_enabled, timer_in_minutes]
+FSUBS = [[-1002517849305, True, 10]] # Force Subscription Channels [channel_id, request_enabled, timer_in_minutes]
 # Database Channel (Primary)
 DB_CHANNEL = "-1003436758650"   # just put channel id dont add ""
 # Multiple Database Channels (can be set via bot settings)
@@ -33,7 +33,7 @@ DB_CHANNEL = "-1003436758650"   # just put channel id dont add ""
 # Auto Delete Timer (seconds)
 AUTO_DEL = 300
 # Admin IDs
-ADMINS = [6497757690, 6103092779]
+ADMINS = [2079844068]
 # Bot Settings
 DISABLE_BTN = True
 PROTECT = True
