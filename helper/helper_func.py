@@ -199,3 +199,27 @@ async def batch_auto_del_notification(bot_username, messages, delay_time, transf
             await notification_msg.edit_text("<b>›› Files Deleted</b>")
     except:
         pass
+
+# =============================================================== #
+# FORCE SUB WRAPPER (Required for shortner.py)
+# =============================================================== #
+
+async def force_sub(client, message):
+    statuses = await check_subscription(client, message.from_user.id)
+
+    if not is_user_subscribed(statuses):
+        buttons = []
+
+        for channel_id, (channel_name, channel_link, request, timer) in client.fsub_dict.items():
+            if channel_link:
+                buttons.append(
+                    [InlineKeyboardButton(f"Join {channel_name}", url=channel_link)]
+                )
+
+        await message.reply(
+            "⚠️ You must join all required channels before using this bot.",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+        return False
+
+    return True
